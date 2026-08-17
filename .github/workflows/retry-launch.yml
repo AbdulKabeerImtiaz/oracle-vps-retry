@@ -28,11 +28,20 @@ jobs:
         env:
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: 'True'
         run: |
-          COUNT=$(oci compute instance list \
+          OUTPUT=$(oci compute instance list \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --display-name "hermes-vps" \
             --lifecycle-state RUNNING \
-            --query "length(data)" --raw-output)
+            --query "length(data)" --raw-output 2>&1)
+          echo "Raw check output: $OUTPUT"
+
+          if [[ "$OUTPUT" =~ ^[0-9]+$ ]]; then
+            COUNT="$OUTPUT"
+          else
+            echo "Check didn't return a clean number — treating as 0 so we don't get stuck skipping forever."
+            COUNT="0"
+          fi
+
           echo "Existing running instances named hermes-vps: $COUNT"
           echo "existing_count=$COUNT" >> "$GITHUB_OUTPUT"
       - name: Attempt instance launch
