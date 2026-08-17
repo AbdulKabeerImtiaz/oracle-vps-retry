@@ -1,17 +1,14 @@
 name: Oracle VPS Capacity Retry
-
 on:
   schedule:
     - cron: '*/20 * * * *'
   workflow_dispatch:
-
 jobs:
   try-launch:
     runs-on: ubuntu-latest
     steps:
       - name: Install OCI CLI
         run: pip install oci-cli
-
       - name: Configure OCI credentials
         run: |
           mkdir -p ~/.oci
@@ -26,8 +23,20 @@ jobs:
           region=${{ secrets.OCI_REGION }}
           key_file=~/.oci/key.pem
           EOF
-
+      - name: Check if instance already exists
+        id: check
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: 'True'
+        run: |
+          COUNT=$(oci compute instance list \
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+            --display-name "hermes-vps" \
+            --lifecycle-state RUNNING \
+            --query "length(data)" --raw-output)
+          echo "Existing running instances named hermes-vps: $COUNT"
+          echo "existing_count=$COUNT" >> "$GITHUB_OUTPUT"
       - name: Attempt instance launch
+        if: steps.check.outputs.existing_count == '0'
         env:
           OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: 'True'
         run: |
@@ -44,7 +53,6 @@ jobs:
             --ssh-authorized-keys-file ~/.oci/ssh_key.pub 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
-
           if [ $EXIT_CODE -eq 0 ]; then
             echo ">>> SUCCESS: instance launched!"
             exit 0
@@ -55,3 +63,6 @@ jobs:
             echo ">>> REAL ERROR — this is not a capacity issue, needs attention."
             exit 1
           fi
+      - name: Skip notice
+        if: steps.check.outputs.existing_count != '0'
+        run: echo ">>> hermes-vps already running — skipping launch attempt this cycle."
