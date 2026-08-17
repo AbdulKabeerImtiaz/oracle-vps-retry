@@ -28,8 +28,11 @@ jobs:
           EOF
 
       - name: Attempt instance launch
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: 'True'
         run: |
-          oci compute instance launch \
+          set +e
+          OUTPUT=$(oci compute instance launch \
             --availability-domain "${{ secrets.OCI_AD }}" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
@@ -38,4 +41,17 @@ jobs:
             --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
             --assign-public-ip true \
             --display-name "hermes-vps" \
-            --ssh-authorized-keys-file ~/.oci/ssh_key.pub
+            --ssh-authorized-keys-file ~/.oci/ssh_key.pub 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo ">>> SUCCESS: instance launched!"
+            exit 0
+          elif echo "$OUTPUT" | grep -q "Out of host capacity"; then
+            echo ">>> No capacity this run — will retry next scheduled run. This is expected, not an error."
+            exit 0
+          else
+            echo ">>> REAL ERROR — this is not a capacity issue, needs attention."
+            exit 1
+          fi
